@@ -1,0 +1,13 @@
+{
+  "name": "memez-token-launch",
+  "version": "1.0.0",
+  "main": "launch.js",
+  "scripts": {
+    "start": "node launch.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "@solana/web3.js": "^1.95.3",
+    "@solana/spl-token": "^0.4.8"
+  }
+}
