@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
+const bs58 = require("bs58");
 const fs = require("fs");
 
 const app = express();
@@ -25,30 +25,30 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
+    // Metadata data (simplified V1 format)
+    const metadataData = Buffer.concat([
+      Buffer.from([1]), // Instruction type (Create Metadata V1)
+      Buffer.from(name.padEnd(32, "\0")), // Name (32 bytes max)
+      Buffer.from((symbol || "$DWH").padEnd(10, "\0")), // Symbol (10 bytes max)
+      Buffer.from("https://example.com/dogwifhat.json".padEnd(200, "\0")), // URI (200 bytes max)
+      Buffer.from([0, 0]), // Seller fee basis points (0)
+      Buffer.from([0]), // No creators
+    ]);
+
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createMetadataAccountV3(
-        {
-          metadata: metadataPDA,
-          mint,
-          mintAuthority: payer.publicKey,
-          payer: payer.publicKey,
-          updateAuthority: payer.publicKey,
-        },
-        {
-          data: {
-            name,
-            symbol: symbol || "$DWH",
-            uri: "https://example.com/dogwifhat.json",
-            sellerFeeBasisPoints: 0,
-            creators: null,
-            collection: null,
-            uses: null,
-          },
-          isMutable: true,
-          collectionDetails: null,
-        }
-      )
+      new TransactionInstruction({
+        keys: [
+          { pubkey: metadataPDA, isSigner: false, isWritable: true }, // Metadata account
+          { pubkey: mint, isSigner: false, isWritable: false }, // Mint
+          { pubkey: payer.publicKey, isSigner: true, isWritable: false }, // Mint authority
+          { pubkey: payer.publicKey, isSigner: true, isWritable: true }, // Payer
+          { pubkey: payer.publicKey, isSigner: false, isWritable: false }, // Update authority
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // System program
+        ],
+        programId: METAPLEX_PROGRAM_ID,
+        data: metadataData,
+      })
     );
     const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
