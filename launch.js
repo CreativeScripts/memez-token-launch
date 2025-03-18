@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction, SystemProgram } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { createInstruction } = require("@metaplex-foundation/mpl-token-metadata");
+const { createMetadataAccountV3Instruction } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -25,28 +25,31 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
-    const metadataData = {
-      name,
-      symbol: symbol || "$DWH",
-      uri: "https://example.com/dogwifhat.json",
-      seller_fee_basis_points: 0,
-      creators: null,
-      collection: null,
-      uses: null,
-    };
-
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createInstruction(
-        METAPLEX_PROGRAM_ID,
-        SystemProgram.programId,
-        metadataPDA,
-        mint,
-        payer.publicKey, // Mint authority
-        payer.publicKey, // Payer
-        payer.publicKey, // Update authority
-        metadataData,
-        true // isMutable
+      createMetadataAccountV3Instruction(
+        {
+          metadata: metadataPDA,
+          mint,
+          mintAuthority: payer.publicKey,
+          payer: payer.publicKey,
+          updateAuthority: payer.publicKey,
+        },
+        {
+          createMetadataAccountArgsV3: {
+            data: {
+              name,
+              symbol: symbol || "$DWH",
+              uri: "https://example.com/dogwifhat.json",
+              sellerFeeBasisPoints: 0,
+              creators: null,
+              collection: null,
+              uses: null,
+            },
+            isMutable: true,
+            collectionDetails: null,
+          },
+        }
       )
     );
     const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
