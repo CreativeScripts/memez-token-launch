@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { createMetadata } = require("@solana/spl-token-metadata");
+const { createUpdateMetadataAccountV2Instruction } = require("@solana/spl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -25,22 +25,28 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     )[0];
 
-    const metadataArgs = {
-      connection,
-      payer,
-      mint,
-      mintAuthority: payer.publicKey,
-      updateAuthority: payer.publicKey,
-      data: {
-        name,
-        symbol: symbol || "$DWH",
-        uri: "https://example.com/dogwifhat.json",
-        sellerFeeBasisPoints: 0,
-        creators: null,
-      },
-    };
-
-    await createMetadata(metadataArgs);
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
+      createUpdateMetadataAccountV2Instruction(
+        metadataPDA,
+        payer.publicKey, // Authority
+        payer.publicKey, // Update authority
+        mint,
+        {
+          name,
+          symbol: symbol || "$DWH",
+          uri: "https://example.com/dogwifhat.json",
+          sellerFeeBasisPoints: 0,
+          creators: null,
+          collection: null,
+          uses: null,
+        },
+        true, // isMutable
+        null // No collection details
+      )
+    );
+    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added for:", mint.toBase58());
 
     return mint.toBase58();
