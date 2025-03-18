@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
-const { createMint } = require("@solana/spl-token");
-const { createUpdateMetadataAccountV2Instruction } = require("@solana/spl-token-metadata");
+const { createMint, TOKEN_2022_PROGRAM_ID } = require("@solana/spl-token");
+const { initializeMetadata } = require("@solana/spl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -16,37 +16,33 @@ const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
-    const mint = await createMint(connection, payer, payer.publicKey, null, 9);
+    const mint = await createMint(
+      connection,
+      payer,
+      payer.publicKey,
+      null,
+      9,
+      undefined,
+      undefined,
+      TOKEN_2022_PROGRAM_ID // Use Token-2022 for metadata support
+    );
     console.log("Mint created:", mint.toBase58());
 
-    // Metadata account PDA (program-derived address)
-    const [metadataPDA] = await PublicKey.findProgramAddress(
-      [
-        Buffer.from("metadata"),
-        new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s").toBuffer(),
-        mint.toBuffer(),
-      ],
-      new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s") // Metaplex program ID
-    );
-
+    const metadata = {
+      mint,
+      name,
+      symbol,
+      uri: "https://example.com/dogwifhat.json",
+      additionalMetadata: [],
+    };
     const { blockhash } = await connection.getLatestBlockhash();
     const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createUpdateMetadataAccountV2Instruction(
-        metadataPDA,
-        payer.publicKey, // Authority
-        payer.publicKey, // Update authority
+      initializeMetadata(
         mint,
-        {
-          name,
-          symbol,
-          uri: "https://example.com/dogwifhat.json",
-          sellerFeeBasisPoints: 0,
-          creators: null,
-          collection: null,
-          uses: null,
-        },
-        true, // Is mutable
-        null // No collection details
+        metadata,
+        payer.publicKey, // Mint authority
+        payer.publicKey, // Update authority
+        TOKEN_2022_PROGRAM_ID
       )
     );
     await connection.sendTransaction(transaction, [payer]);
