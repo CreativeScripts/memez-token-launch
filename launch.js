@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { Metaplex } = require("@metaplex-foundation/js");
 const fs = require("fs");
 
 const app = express();
@@ -12,28 +11,15 @@ app.use(cors());
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-const metaplex = Metaplex.make(connection).use({ keypair: payer });
 
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
     const mint = await createMint(connection, payer, payer.publicKey, null, 9);
     console.log("Mint created:", mint.toBase58());
-
-    await metaplex.nfts().create({
-      uri: "https://example.com/dogwifhat.json",
-      name,
-      symbol: symbol || "$DWH",
-      sellerFeeBasisPoints: 0,
-      mint,
-      tokenOwner: payer.publicKey,
-      updateAuthority: payer,
-    });
-    console.log("Metadata added for:", mint.toBase58());
-
     return mint.toBase58();
   } catch (err) {
-    console.error("Mint/metadata failed:", err.stack);
+    console.error("Mint failed:", err.stack);
     throw err;
   }
 }
