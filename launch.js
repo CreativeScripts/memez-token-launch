@@ -30,7 +30,7 @@ async function launchToken(name, symbol, supply) {
       createMetadataAccountV3(
         {
           metadata: metadataPDA,
-          mint: mint,
+          mint,
           mintAuthority: payer.publicKey,
           payer: payer.publicKey,
           updateAuthority: payer.publicKey,
@@ -38,3 +38,39 @@ async function launchToken(name, symbol, supply) {
         {
           data: {
             name,
+            symbol: symbol || "$DWH", // Fallback here too
+            uri: "https://example.com/dogwifhat.json",
+            sellerFeeBasisPoints: 0,
+            creators: null,
+            collection: null,
+            uses: null,
+          },
+          isMutable: true,
+          collectionDetails: null,
+        },
+        false // No extra signers
+      )
+    );
+    await connection.sendTransaction(transaction, [payer]);
+    console.log("Metadata added for:", mint.toBase58());
+
+    return mint.toBase58();
+  } catch (err) {
+    console.error("Mint/metadata failed:", err.stack);
+    throw err;
+  }
+}
+
+app.post("/launch", async (req, res) => {
+  const { name, symbol = "$DWH", supply } = req.body;
+  console.log("Received launch request:", { name, symbol, supply });
+  try {
+    const mintAddress = await launchToken(name, symbol, supply);
+    res.json({ success: true, mint: mintAddress });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const port = process.env.PORT || 3001;
+app.listen(port, () => console.log(`Server running on port ${port}`));
