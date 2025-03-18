@@ -38,38 +38,3 @@ async function launchToken(name, symbol, supply) {
         {
           data: {
             name,
-            symbol,
-            uri: "https://example.com/dogwifhat.json",
-            sellerFeeBasisPoints: 0,
-            creators: null,
-            collection: null,
-            uses: null,
-          },
-          isMutable: true,
-          collectionDetails: null,
-        }
-      )
-    );
-    await connection.sendTransaction(transaction, [payer]);
-    console.log("Metadata added for:", mint.toBase58());
-
-    return mint.toBase58();
-  } catch (err) {
-    console.error("Mint/metadata failed:", err);
-    throw err;
-  }
-}
-
-app.post("/launch", async (req, res) => {
-  const { name, symbol = "$DWH", supply } = req.body;
-  console.log("Received launch request:", { name, symbol, supply });
-  try {
-    const mintAddress = await launchToken(name, symbol, supply);
-    res.json({ success: true, mint: mintAddress });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-const port = process.env.PORT || 3001;
-app.listen(port, () => console.log(`Server running on port ${port}`));
