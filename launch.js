@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
-const { createMint, TOKEN_2022_PROGRAM_ID } = require("@solana/spl-token");
-const { initializeMetadata } = require("@solana/spl-token-metadata");
+const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
+const { createMint } = require("@solana/spl-token");
+const { createMetadata } = require("@solana/spl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -16,36 +16,23 @@ const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
-    const mint = await createMint(
-      connection,
-      payer,
-      payer.publicKey,
-      null,
-      9,
-      undefined,
-      undefined,
-      TOKEN_2022_PROGRAM_ID // Use Token-2022 for metadata support
-    );
+    const mint = await createMint(connection, payer, payer.publicKey, null, 9);
     console.log("Mint created:", mint.toBase58());
 
-    const metadata = {
+    await createMetadata({
+      connection,
+      payer,
       mint,
-      name,
-      symbol,
-      uri: "https://example.com/dogwifhat.json",
-      additionalMetadata: [],
-    };
-    const { blockhash } = await connection.getLatestBlockhash();
-    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      initializeMetadata(
-        mint,
-        metadata,
-        payer.publicKey, // Mint authority
-        payer.publicKey, // Update authority
-        TOKEN_2022_PROGRAM_ID
-      )
-    );
-    await connection.sendTransaction(transaction, [payer]);
+      mintAuthority: payer.publicKey,
+      updateAuthority: payer.publicKey,
+      data: {
+        name,
+        symbol,
+        uri: "https://example.com/dogwifhat.json",
+        sellerFeeBasisPoints: 0,
+        creators: null
+      }
+    });
     console.log("Metadata added for:", mint.toBase58());
 
     return mint.toBase58();
