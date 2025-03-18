@@ -67,5 +67,5 @@ app.post("/launch", async (req, res) => {
   }
 });
 
-const port = process.env(PORT || 3001);
+const port = process.env.PORT || 3001; // Fixed this line
 app.listen(port, () => console.log(`Server running on port ${port}`));
