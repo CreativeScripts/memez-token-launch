@@ -31,14 +31,14 @@ async function launchToken(name, symbol, supply) {
         {
           metadata: metadataPDA,
           mint,
-          mintAuthority: payer.publicKey,
-          payer: payer.publicKey,
+          mintAuthority: payer, // Full Keypair, not just publicKey
+          payer: payer, // Full Keypair
           updateAuthority: payer.publicKey,
         },
         {
           data: {
             name,
-            symbol: symbol || "$DWH", // Fallback here too
+            symbol: symbol || "$DWH",
             uri: "https://example.com/dogwifhat.json",
             sellerFeeBasisPoints: 0,
             creators: null,
@@ -47,8 +47,7 @@ async function launchToken(name, symbol, supply) {
           },
           isMutable: true,
           collectionDetails: null,
-        },
-        false // No extra signers
+        }
       )
     );
     await connection.sendTransaction(transaction, [payer]);
@@ -62,6 +61,7 @@ async function launchToken(name, symbol, supply) {
 }
 
 app.post("/launch", async (req, res) => {
+  console.log("Raw body:", req.body);
   const { name, symbol = "$DWH", supply } = req.body;
   console.log("Received launch request:", { name, symbol, supply });
   try {
