@@ -1,8 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { createMetadataAccount } = require("@solana/spl-token-metadata");
+const { createMetadata } = require("@solana/spl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -25,27 +25,20 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createMetadataAccount(
-        connection,
-        payer,
-        mint,
-        payer.publicKey, // Mint authority
-        payer.publicKey, // Update authority
-        payer.publicKey, // Fee payer
-        {
-          name,
-          symbol: symbol || "$DWH",
-          uri: "https://example.com/dogwifhat.json",
-          sellerFeeBasisPoints: 0,
-          creators: null,
-        },
-        true // isMutable
-      )
-    );
-    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+    await createMetadata({
+      connection,
+      payer,
+      mint,
+      mintAuthority: payer.publicKey,
+      updateAuthority: payer.publicKey,
+      data: {
+        name,
+        symbol: symbol || "$DWH",
+        uri: "https://example.com/dogwifhat.json",
+        sellerFeeBasisPoints: 0,
+        creators: null,
+      },
+    });
     console.log("Metadata added for:", mint.toBase58());
 
     return mint.toBase58();
@@ -67,5 +60,5 @@ app.post("/launch", async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3001; // Fixed this line
+const port = process.env.PORT || 3001;
 app.listen(port, () => console.log(`Server running on port ${port}`));
