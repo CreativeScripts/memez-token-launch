@@ -30,9 +30,9 @@ async function launchToken(name, symbol, supply) {
       createMetadataAccountV3(
         {
           metadata: metadataPDA,
-          mint,
+          mint: mint,
           mintAuthority: payer.publicKey,
-          payer: payer,
+          payer: payer.publicKey, // PublicKey here
           updateAuthority: payer.publicKey,
         },
         {
