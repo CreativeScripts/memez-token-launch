@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, Transaction, TransactionInstruction, SystemProgram } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
 const bs58 = require("bs58");
 const fs = require("fs");
@@ -25,7 +25,6 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
-    // Metadata data (simplified V1 format)
     const metadataData = Buffer.concat([
       Buffer.from([1]), // Instruction type (Create Metadata V1)
       Buffer.from(name.padEnd(32, "\0")), // Name (32 bytes max)
