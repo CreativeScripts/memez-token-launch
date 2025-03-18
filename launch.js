@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
 const { createMint } = require("@solana/spl-token");
-const { createMetadataAccountV3Instruction } = require("@metaplex-foundation/mpl-token-metadata");
+const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 
 const app = express();
@@ -27,7 +27,7 @@ async function launchToken(name, symbol, supply) {
 
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createMetadataAccountV3Instruction(
+      createMetadataAccountV3(
         {
           metadata: metadataPDA,
           mint,
@@ -36,19 +36,17 @@ async function launchToken(name, symbol, supply) {
           updateAuthority: payer.publicKey,
         },
         {
-          createMetadataAccountArgsV3: {
-            data: {
-              name,
-              symbol: symbol || "$DWH",
-              uri: "https://example.com/dogwifhat.json",
-              sellerFeeBasisPoints: 0,
-              creators: null,
-              collection: null,
-              uses: null,
-            },
-            isMutable: true,
-            collectionDetails: null,
+          data: {
+            name,
+            symbol: symbol || "$DWH",
+            uri: "https://example.com/dogwifhat.json",
+            sellerFeeBasisPoints: 0,
+            creators: null,
+            collection: null,
+            uses: null,
           },
+          isMutable: true,
+          collectionDetails: null,
         }
       )
     );
