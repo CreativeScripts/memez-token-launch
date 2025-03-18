@@ -25,7 +25,7 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
-    const { blockhash } = await connection.getLatestBlockhash();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
       createMetadataAccountV3(
         {
@@ -50,7 +50,8 @@ async function launchToken(name, symbol, supply) {
         }
       )
     );
-    await connection.sendTransaction(transaction, [payer]);
+    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added for:", mint.toBase58());
 
     return mint.toBase58();
