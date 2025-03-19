@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccount } = require("@solana/spl-token");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -11,7 +11,7 @@ app.use(cors());
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"); // Explicit PublicKey
+const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
@@ -31,7 +31,7 @@ async function launchToken(name, symbol, supply) {
           metadata: {
             name,
             symbol: symbol || "$DWH",
-            uri: "https://creativescripts.github.io/dogwifhat-metadata/dogwifhat.json", // Replace with your URI
+            uri: "https://creativescripts.github.io/dogwifhat-metadata/dogwifhat.json",
             additionalMetadata: [],
           },
         },
@@ -43,19 +43,32 @@ async function launchToken(name, symbol, supply) {
 
     // Wait for mint confirmation
     await new Promise(resolve => setTimeout(resolve, 2000));
-    console.log("Waited 2s for mint confirmation");
 
-    // Explicitly create ATA
-    const tokenAccount = await createAssociatedTokenAccount(
-      connection,
-      payer,
-      mint,
-      payer.publicKey,
-      undefined,
-      TOKEN_2022_PROGRAM,
-      { commitment: "confirmed" }
+    // Manual ATA creation
+    const ata = new PublicKey(
+      await PublicKey.findProgramAddressSync(
+        [payer.publicKey.toBuffer(), TOKEN_2022_PROGRAM.toBuffer(), mint.toBuffer()],
+        TOKEN_2022_PROGRAM
+      )[0]
     );
-    console.log("Token account created:", tokenAccount.toBase58());
+    console.log("ATA address calculated:", ata.toBase58());
+
+    const transaction = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        payer.publicKey, // Payer
+        ata, // ATA address
+        payer.publicKey, // Owner
+        mint, // Mint
+        TOKEN_2022_PROGRAM // Program ID
+      )
+    );
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = payer.publicKey;
+
+    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Token account created with signature:", signature);
 
     // Mint initial supply
     const mintAmount = BigInt(supply) * BigInt(10**9);
@@ -63,13 +76,13 @@ async function launchToken(name, symbol, supply) {
       connection,
       payer,
       mint,
-      tokenAccount,
+      ata,
       payer,
       mintAmount,
       [],
       { commitment: "confirmed" }
     );
-    console.log("Initial supply minted to:", tokenAccount.toBase58(), "Amount:", mintAmount.toString());
+    console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString());
 
     return mint.toBase58();
   } catch (err) {
