@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
-const { createMint, mintToChecked, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, getAccount } = require("@solana/spl-token");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, TransactionInstruction } = require("@solana/web3.js");
+const { TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -13,19 +13,40 @@ const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
+async function createMintInstruction(connection, payer, mint, mintAuthority, decimals, metadata) {
+  const transaction = new Transaction();
+  const mintIx = new TransactionInstruction({
+    keys: [
+      { pubkey: payer.publicKey, isSigner: true, isWritable: true },
+      { pubkey: mint, isSigner: false, isWritable: true },
+      { pubkey: mintAuthority, isSigner: false, isWritable: false },
+    ],
+    programId: TOKEN_2022_PROGRAM_ID,
+    data: Buffer.from([0x00, ...Buffer.from(decimals.toString()), ...Buffer.from(JSON.stringify(metadata))]) // Simplified for example
+  });
+  transaction.add(mintIx);
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  transaction.recentBlockhash = blockhash;
+  transaction.feePayer = payer.publicKey;
+  const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
+  await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+  return mint;
+}
+
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
     const balance = await connection.getBalance(payer.publicKey);
     console.log("Payer balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
-    const mint = await createMint(
+    const mintKeypair = Keypair.generate();
+    const mint = mintKeypair.publicKey;
+    await createMintInstruction(
       connection,
       payer,
+      mint,
       payer.publicKey,
-      null,
       9,
-      undefined,
       {
         extensions: {
           metadata: {
@@ -35,9 +56,7 @@ async function launchToken(name, symbol, supply) {
             additionalMetadata: [],
           },
         },
-      },
-      TOKEN_2022_PROGRAM_ID,
-      { commitment: "confirmed" }
+      }
     );
     console.log("Mint created with metadata:", mint.toBase58());
 
@@ -70,29 +89,24 @@ async function launchToken(name, symbol, supply) {
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created with signature:", signature);
 
-    // Verify ATA state
-    const ataInfo = await getAccount(connection, ata, "confirmed");
-    console.log("ATA state:", {
-      address: ataInfo.address.toBase58(),
-      mint: ataInfo.mint.toBase58(),
-      owner: ataInfo.owner.toBase58(),
-      amount: ataInfo.amount.toString()
-    });
-
-    // Mint initial supply with Token-2022 using mintToChecked
+    // Mint initial supply with raw Token-2022 instruction
     const mintAmount = BigInt(supply) * BigInt(10**9);
-    const mintTx = await mintToChecked(
-      connection,
-      payer,
-      mint,
-      ata,
-      payer,
-      mintAmount,
-      9, // Decimals
-      [],
-      { commitment: "confirmed", programId: TOKEN_2022_PROGRAM_ID }
-    );
-    console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString(), "MintTo Tx:", mintTx);
+    const mintToIx = new TransactionInstruction({
+      keys: [
+        { pubkey: mint, isSigner: false, isWritable: true },
+        { pubkey: ata, isSigner: false, isWritable: true },
+        { pubkey: payer.publicKey, isSigner: true, isWritable: false },
+      ],
+      programId: TOKEN_2022_PROGRAM_ID,
+      data: Buffer.from([0x09, ...Buffer.from(mintAmount.toString())]) // MintTo instruction (simplified)
+    });
+    const mintToTx = new Transaction().add(mintToIx);
+    mintToTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
+    mintToTx.feePayer = payer.publicKey;
+
+    const mintTxSignature = await connection.sendTransaction(mintToTx, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({ signature: mintTxSignature, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString(), "MintTo Tx:", mintTxSignature);
 
     return mint.toBase58();
   } catch (err) {
