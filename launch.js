@@ -32,7 +32,7 @@ async function launchToken(name, symbol, supply) {
           metadata: metadataPDA,
           mint,
           mintAuthority: payer.publicKey,
-          payer: payer.publicKey, // Back to PublicKey, let signers handle it
+          payer: payer.publicKey,
           updateAuthority: payer.publicKey,
         },
         {
@@ -51,10 +51,7 @@ async function launchToken(name, symbol, supply) {
       )
     );
 
-    const signature = await connection.sendTransaction(transaction, [payer], {
-      skipPreflight: false,
-      signers: [payer], // Explicitly pass payer as signer
-    });
+    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added for:", mint.toBase58());
 
