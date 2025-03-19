@@ -58,7 +58,7 @@ async function launchToken(name, symbol, supply) {
         ata, // ATA address
         payer.publicKey, // Owner
         mint, // Mint
-        TOKEN_2022_PROGRAM_ID, // Token Program (for mint compatibility)
+        TOKEN_2022_PROGRAM_ID, // Token Program
         ASSOCIATED_TOKEN_PROGRAM // ATA Program
       )
     );
@@ -70,19 +70,19 @@ async function launchToken(name, symbol, supply) {
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created with signature:", signature);
 
-    // Mint initial supply with Token-2022 program
+    // Mint initial supply with Token-2022
     const mintAmount = BigInt(supply) * BigInt(10**9);
-    await mintTo(
+    const mintTx = await mintTo(
       connection,
       payer,
       mint,
       ata,
       payer,
       mintAmount,
-      [], // Multi-signers (none)
-      { commitment: "confirmed", programId: TOKEN_2022_PROGRAM_ID } // Explicit Token-2022 program
+      [],
+      { commitment: "confirmed", programId: TOKEN_2022_PROGRAM_ID }
     );
-    console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString());
+    console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString(), "MintTo Tx:", mintTx);
 
     return mint.toBase58();
   } catch (err) {
