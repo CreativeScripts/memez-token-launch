@@ -70,7 +70,7 @@ async function launchToken(name, symbol, supply) {
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created with signature:", signature);
 
-    // Mint initial supply
+    // Mint initial supply with Token-2022 program
     const mintAmount = BigInt(supply) * BigInt(10**9);
     await mintTo(
       connection,
@@ -79,8 +79,8 @@ async function launchToken(name, symbol, supply) {
       ata,
       payer,
       mintAmount,
-      [],
-      { commitment: "confirmed" }
+      [], // Multi-signers (none)
+      { commitment: "confirmed", programId: TOKEN_2022_PROGRAM_ID } // Explicit Token-2022 program
     );
     console.log("Initial supply minted to:", ata.toBase58(), "Amount:", mintAmount.toString());
 
