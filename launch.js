@@ -1,8 +1,7 @@
 const express = require("express");
 const cors = require("cors");
-const { Connection, Keypair, PublicKey, Transaction } = require("@solana/web3.js");
-const { createMint } = require("@solana/spl-token");
-const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
+const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
+const { createMint, TOKEN_2022_PROGRAM_ID } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -12,52 +11,33 @@ app.use(cors());
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-const METAPLEX_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
-    const mint = await createMint(connection, payer, payer.publicKey, null, 9);
-    console.log("Mint created:", mint.toBase58());
-
-    const [metadataPDA] = await PublicKey.findProgramAddress(
-      [Buffer.from("metadata"), METAPLEX_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-      METAPLEX_PROGRAM_ID
-    );
-
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
-      createMetadataAccountV3(
-        {
-          metadata: metadataPDA,
-          mint,
-          mintAuthority: payer.publicKey,
-          payer: payer.publicKey,
-          updateAuthority: payer.publicKey,
-        },
-        {
-          data: {
+    const mint = await createMint(
+      connection,
+      payer,
+      payer.publicKey, // Mint authority
+      null, // Freeze authority (none)
+      9, // Decimals
+      undefined, // Keypair (default generated)
+      {
+        extensions: {
+          metadata: {
             name,
             symbol: symbol || "$DWH",
             uri: "https://example.com/dogwifhat.json",
-            sellerFeeBasisPoints: 0,
-            creators: null,
-            collection: null,
-            uses: null,
+            additionalMetadata: [], // Optional extra fields
           },
-          isMutable: true,
-          collectionDetails: null,
-        }
-      )
+        },
+      },
+      TOKEN_2022_PROGRAM_ID
     );
-
-    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-    console.log("Metadata added for:", mint.toBase58());
-
+    console.log("Mint created with metadata:", mint.toBase58());
     return mint.toBase58();
   } catch (err) {
-    console.error("Mint/metadata failed:", err.stack);
+    console.error("Mint failed:", err.stack);
     throw err;
   }
 }
