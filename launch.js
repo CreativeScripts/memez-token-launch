@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL } = require("@solana/web3.js");
-const { createMint, createAssociatedTokenAccount, mintTo, TOKEN_2022_PROGRAM_ID } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccount } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -11,11 +11,11 @@ app.use(cors());
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"); // Explicit PublicKey
 
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
   try {
-    // Check payer balance
     const balance = await connection.getBalance(payer.publicKey);
     console.log("Payer balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
@@ -36,35 +36,26 @@ async function launchToken(name, symbol, supply) {
           },
         },
       },
-      TOKEN_2022_PROGRAM_ID,
+      TOKEN_2022_PROGRAM,
       { commitment: "confirmed" }
     );
     console.log("Mint created with metadata:", mint.toBase58());
 
     // Wait for mint confirmation
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 2s delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log("Waited 2s for mint confirmation");
 
     // Explicitly create ATA
-    let tokenAccount;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        tokenAccount = await createAssociatedTokenAccount(
-          connection,
-          payer,
-          mint,
-          payer.publicKey,
-          undefined,
-          TOKEN_2022_PROGRAM_ID,
-          { commitment: "confirmed" }
-        );
-        console.log("Token account created:", tokenAccount.toBase58());
-        break; // Exit loop on success
-      } catch (err) {
-        console.error(`Attempt ${attempt} to create token account failed:`, err);
-        if (attempt === 3) throw new Error("Token account creation failed after 3 attempts: " + err.message);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s before retry
-      }
-    }
+    const tokenAccount = await createAssociatedTokenAccount(
+      connection,
+      payer,
+      mint,
+      payer.publicKey,
+      undefined,
+      TOKEN_2022_PROGRAM,
+      { commitment: "confirmed" }
+    );
+    console.log("Token account created:", tokenAccount.toBase58());
 
     // Mint initial supply
     const mintAmount = BigInt(supply) * BigInt(10**9);
