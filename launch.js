@@ -25,35 +25,36 @@ async function launchToken(name, symbol, supply) {
       METAPLEX_PROGRAM_ID
     );
 
-    const metadataInstruction = createMetadataAccountV3(
-      {
-        metadata: metadataPDA,
-        mint,
-        mintAuthority: payer.publicKey,
-        payer: payer.publicKey,
-        updateAuthority: payer.publicKey,
-      },
-      {
-        data: {
-          name,
-          symbol: symbol || "$DWH",
-          uri: "https://example.com/dogwifhat.json",
-          sellerFeeBasisPoints: 0,
-          creators: null,
-          collection: null,
-          uses: null,
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey }).add(
+      createMetadataAccountV3(
+        {
+          metadata: metadataPDA,
+          mint,
+          mintAuthority: payer.publicKey,
+          payer: payer.publicKey, // Back to PublicKey, let signers handle it
+          updateAuthority: payer.publicKey,
         },
-        isMutable: true,
-        collectionDetails: null,
-      }
+        {
+          data: {
+            name,
+            symbol: symbol || "$DWH",
+            uri: "https://example.com/dogwifhat.json",
+            sellerFeeBasisPoints: 0,
+            creators: null,
+            collection: null,
+            uses: null,
+          },
+          isMutable: true,
+          collectionDetails: null,
+        }
+      )
     );
 
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    const transaction = new Transaction({ recentBlockhash: blockhash, feePayer: payer.publicKey });
-    transaction.add(metadataInstruction);
-    transaction.sign(payer); // Explicitly sign with payer Keypair
-
-    const signature = await connection.sendRawTransaction(transaction.serialize(), { skipPreflight: false });
+    const signature = await connection.sendTransaction(transaction, [payer], {
+      skipPreflight: false,
+      signers: [payer], // Explicitly pass payer as signer
+    });
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added for:", mint.toBase58());
 
