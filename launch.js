@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -11,7 +11,7 @@ app.use(cors());
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 async function launchToken(name, symbol, supply) {
   console.log("Starting token mint:", { name, symbol, supply });
@@ -36,7 +36,7 @@ async function launchToken(name, symbol, supply) {
           },
         },
       },
-      TOKEN_2022_PROGRAM,
+      TOKEN_2022_PROGRAM_ID,
       { commitment: "confirmed" }
     );
     console.log("Mint created with metadata:", mint.toBase58());
@@ -44,22 +44,22 @@ async function launchToken(name, symbol, supply) {
     // Wait for mint confirmation
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Manual ATA creation
-    const ata = new PublicKey(
-      await PublicKey.findProgramAddressSync(
-        [payer.publicKey.toBuffer(), TOKEN_2022_PROGRAM.toBuffer(), mint.toBuffer()],
-        TOKEN_2022_PROGRAM
-      )[0]
-    );
+    // Calculate ATA address with Associated Token Program
+    const ata = await PublicKey.findProgramAddressSync(
+      [payer.publicKey.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+      ASSOCIATED_TOKEN_PROGRAM
+    )[0];
     console.log("ATA address calculated:", ata.toBase58());
 
+    // Create ATA
     const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
         payer.publicKey, // Payer
         ata, // ATA address
         payer.publicKey, // Owner
         mint, // Mint
-        TOKEN_2022_PROGRAM // Program ID
+        TOKEN_2022_PROGRAM_ID, // Token Program (for mint compatibility)
+        ASSOCIATED_TOKEN_PROGRAM // ATA Program
       )
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
