@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const { createMint, mintToChecked, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, getAccount } = require("@solana/spl-token");
 const fs = require("fs");
 
 const app = express();
@@ -58,7 +58,7 @@ async function launchToken(name, symbol, supply) {
         ata, // ATA address
         payer.publicKey, // Owner
         mint, // Mint
-        TOKEN_2022_PROGRAM_ID, // Token Program
+        TOKEN_2022_PROGRAM_ID, // Token Program (Token-2022)
         ASSOCIATED_TOKEN_PROGRAM // ATA Program
       )
     );
@@ -70,15 +70,25 @@ async function launchToken(name, symbol, supply) {
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created with signature:", signature);
 
-    // Mint initial supply with Token-2022
+    // Verify ATA state
+    const ataInfo = await getAccount(connection, ata, "confirmed");
+    console.log("ATA state:", {
+      address: ataInfo.address.toBase58(),
+      mint: ataInfo.mint.toBase58(),
+      owner: ataInfo.owner.toBase58(),
+      amount: ataInfo.amount.toString()
+    });
+
+    // Mint initial supply with Token-2022 using mintToChecked
     const mintAmount = BigInt(supply) * BigInt(10**9);
-    const mintTx = await mintTo(
+    const mintTx = await mintToChecked(
       connection,
       payer,
       mint,
       ata,
       payer,
       mintAmount,
+      9, // Decimals
       [],
       { commitment: "confirmed", programId: TOKEN_2022_PROGRAM_ID }
     );
