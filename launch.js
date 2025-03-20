@@ -14,6 +14,7 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const BASE_URL = "https://memez-token-launch.onrender.com"; // Hardcode for now
 
 const metadataDir = path.join(__dirname, "metadata");
 if (!fs.existsSync(metadataDir)) fs.mkdirSync(metadataDir);
@@ -34,7 +35,7 @@ app.post("/upload-metadata", (req, res) => {
   const filename = `${Date.now()}-${name.replace(/\s+/g, "-")}.json`;
   const filepath = path.join(metadataDir, filename);
   fs.writeFileSync(filepath, JSON.stringify(metadata, null, 2));
-  const uri = `https://${req.get("host")}/metadata/${filename}`;
+  const uri = `${BASE_URL}/metadata/${filename}`;
   res.json({ success: true, uri });
 });
 
@@ -44,8 +45,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const balance = await connection.getBalance(payer.publicKey);
     console.log("Payer balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
-    // Upload metadata
-    const metadataResponse = await fetch(`https://${req.get("host")}/upload-metadata`, {
+    const metadataResponse = await fetch(`${BASE_URL}/upload-metadata`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, symbol, description, image, telegram, twitter, website }),
