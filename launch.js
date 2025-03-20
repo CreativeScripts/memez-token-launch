@@ -8,8 +8,6 @@ const path = require("path");
 const app = express();
 app.use(express.json());
 app.use(cors());
-
-// Serve static files (for metadata access)
 app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
@@ -17,31 +15,25 @@ const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
-// Ensure metadata directory exists
 const metadataDir = path.join(__dirname, "metadata");
-if (!fs.existsSync(metadataDir)) {
-  fs.mkdirSync(metadataDir);
-}
+if (!fs.existsSync(metadataDir)) fs.mkdirSync(metadataDir);
 
-// Metadata upload endpoint
 app.post("/upload-metadata", (req, res) => {
   const { name, symbol, description, image, telegram, twitter, website } = req.body;
   const metadata = {
     name,
     symbol,
     description: description || "A memecoin launched on memez.wtf",
-    image: image || "https://via.placeholder.com/150", // Placeholder if no image
+    image: image || "https://via.placeholder.com/150",
     external_url: website || "",
     attributes: [
       { trait_type: "Telegram", value: telegram || "N/A" },
       { trait_type: "Twitter", value: twitter || "N/A" },
     ],
   };
-
   const filename = `${Date.now()}-${name.replace(/\s+/g, "-")}.json`;
   const filepath = path.join(metadataDir, filename);
   fs.writeFileSync(filepath, JSON.stringify(metadata, null, 2));
-
   const uri = `https://${req.get("host")}/metadata/${filename}`;
   res.json({ success: true, uri });
 });
@@ -52,13 +44,14 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const balance = await connection.getBalance(payer.publicKey);
     console.log("Payer balance:", balance / LAMPORTS_PER_SOL, "SOL");
 
-    // Upload metadata first
-    const metadataResponse = await fetch(`http://localhost:${process.env.PORT || 3001}/upload-metadata`, {
+    // Upload metadata
+    const metadataResponse = await fetch(`https://${req.get("host")}/upload-metadata`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, symbol, description, image, telegram, twitter, website }),
     });
     const { uri } = await metadataResponse.json();
+    console.log("Metadata URI:", uri);
 
     const mint = await createMint(
       connection,
@@ -80,7 +73,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       TOKEN_2022_PROGRAM_ID,
       { commitment: "confirmed" }
     );
-    console.log("Mint created with metadata:", mint.toBase58());
+    console.log("Mint created:", mint.toBase58());
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -134,8 +127,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
 }
 
 app.post("/launch", async (req, res) => {
-  const { name, symbol, supply, description, image, telegram, twitter, website } = req.body;
-  console.log("Received launch request:", { name, symbol, supply });
+  const { name, symbol, supply, description, image, telegram, twitter, website, wallet } = req.body;
+  console.log("Received launch request:", { name, symbol, supply, wallet });
   try {
     const mintAddress = await launchToken(name, symbol, supply, description, image, telegram, twitter, website);
     res.json({ success: true, mint: mintAddress });
