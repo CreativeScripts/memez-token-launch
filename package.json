@@ -10,6 +10,6 @@
     "@solana/web3.js": "^1.95.3",
     "@solana/spl-token": "^0.4.8",
     "cors": "^2.8.5",
-    "axios": "^1.7.7"
+    "express-form-data": "^2.0.23" // Add this
   }
 }
