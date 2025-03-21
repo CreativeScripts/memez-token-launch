@@ -10,6 +10,7 @@
     "@solana/web3.js": "^1.78.0",
     "@solana/spl-token": "^0.4.8",
     "cors": "^2.8.5",
-    "express-form-data": "^2.0.23"
+    "express-form-data": "^2.0.23",
+    "@metaplex-foundation/mpl-token-metadata": "^3.2.1"
   }
 }
