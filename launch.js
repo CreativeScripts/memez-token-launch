@@ -7,6 +7,8 @@ const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-meta
 const fs = require("fs");
 const path = require("path");
 
+const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -17,7 +19,6 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"); // Add this
 const BASE_URL = "https://memez-token-launch.onrender.com";
 
 const metadataDir = path.join(__dirname, "metadata");
@@ -84,10 +85,10 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const metadataTx = new Transaction().add(
       createMetadataAccountV3({
         metadata: metadataPDA,
-        mint,
-        mintAuthority: payer.publicKey,
-        payer: payer.publicKey,
-        updateAuthority: payer.publicKey,
+        mint: mint,
+        mintAuthority: payer, // Use full Keypair as Signer
+        payer: payer,         // Use full Keypair as Signer
+        updateAuthority: payer.publicKey, // PublicKey is fine here
         data: {
           name,
           symbol,
