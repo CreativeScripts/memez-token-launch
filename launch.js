@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
@@ -98,37 +98,15 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       throw new Error("Invalid base58 public key: " + err.message);
     }
 
-    // Prepare all transactions
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-
-    // 1. Create mint account
-    const mintTx = new Transaction();
-    mintTx.recentBlockhash = blockhash;
-    mintTx.feePayer = payer.publicKey;
-    mintTx.add(
+    // Create and initialize mint using createMint
+    const mintTx = new Transaction().add(
       SystemProgram.createAccount({
         fromPubkey: payer.publicKey,
         newAccountPubkey: mintKeypair.publicKey,
         space: 82,
         lamports: await connection.getMinimumBalanceForRentExemption(82),
         programId: TOKEN_2022_PROGRAM_ID,
-      })
-    );
-    const mintSerialized = mintTx.serializeMessage();
-    const payerMintSignature = nacl.sign.detached(mintSerialized, secretKeyUint8);
-    const mintKeySignature = nacl.sign.detached(mintSerialized, mintKeypair.secretKey);
-    mintTx.addSignature(payer.publicKey, Buffer.from(payerMintSignature));
-    mintTx.addSignature(mintKeypair.publicKey, Buffer.from(mintKeySignature));
-    const mintSig = await connection.sendRawTransaction(mintTx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
-    const mint = mintKeypair.publicKey;
-    console.log("Mint account created:", mint.toBase58());
-
-    // 2. Initialize mint
-    const initMintTx = new Transaction();
-    initMintTx.recentBlockhash = blockhash;
-    initMintTx.feePayer = payer.publicKey;
-    initMintTx.add(
+      }),
       createInitializeMintInstruction({
         mint: mintKeypair.publicKey,
         decimals: 9,
@@ -137,20 +115,26 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
         programId: TOKEN_2022_PROGRAM_ID,
       })
     );
-    const initSerialized = initMintTx.serializeMessage();
-    const initSignature = nacl.sign.detached(initSerialized, secretKeyUint8);
-    initMintTx.addSignature(payer.publicKey, Buffer.from(initSignature));
-    const initMintSig = await connection.sendRawTransaction(initMintTx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction({ signature: initMintSig, blockhash, lastValidBlockHeight }, "confirmed");
-    console.log("Mint initialized:", mint.toBase58());
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    mintTx.recentBlockhash = blockhash;
+    mintTx.feePayer = payer.publicKey;
+    const mintSerialized = mintTx.serializeMessage();
+    const payerMintSignature = nacl.sign.detached(mintSerialized, secretKeyUint8);
+    const mintKeySignature = nacl.sign.detached(mintSerialized, mintKeypair.secretKey);
+    mintTx.addSignature(payer.publicKey, Buffer.from(payerMintSignature));
+    mintTx.addSignature(mintKeypair.publicKey, Buffer.from(mintKeySignature));
+    const mintSig = await connection.sendRawTransaction(mintTx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
+    const mint = mintKeypair.publicKey;
+    console.log("Mint created and initialized:", mint.toBase58());
 
-    // 3. Create associated token account
+    // Create associated token account
     const ata = await PublicKey.findProgramAddressSync(
       [payer.publicKey.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), mint.toBuffer()],
       ASSOCIATED_TOKEN_PROGRAM
     )[0];
     const ataTx = new Transaction();
-    ataTx.recentBlockhash = blockhash;
+    ataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     ataTx.feePayer = payer.publicKey;
     ataTx.add(
       createAssociatedTokenAccountInstruction(
@@ -166,10 +150,10 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const ataSignature = nacl.sign.detached(ataSerialized, secretKeyUint8);
     ataTx.addSignature(payer.publicKey, Buffer.from(ataSignature));
     const ataSig = await connection.sendRawTransaction(ataTx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction({ signature: ataSig, blockhash, lastValidBlockHeight }, "confirmed");
+    await connection.confirmTransaction({ signature: ataSig, blockhash: ataTx.recentBlockhash, lastValidBlockHeight: (await connection.getLatestBlockhash("confirmed")).lastValidBlockHeight }, "confirmed");
     console.log("Token account created:", ataSig);
 
-    // 4. Mint tokens
+    // Mint tokens
     const mintAmount = BigInt(supply) * BigInt(10**9);
     const mintToTx = await mintTo(
       connection,
@@ -184,7 +168,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Supply minted to:", ata.toBase58(), "Tx:", mintToTx);
 
-    // 5. Add metadata
+    // Add metadata
     const METAPLEX_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
     const [metaplexMetadataPDA] = PublicKey.findProgramAddressSync(
       [
@@ -203,7 +187,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     console.log("Metadata URI is accessible");
 
     const metadataTx = new Transaction();
-    metadataTx.recentBlockhash = blockhash;
+    metadataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     metadataTx.feePayer = payer.publicKey;
     metadataTx.add(
       createMetadataAccountV3({
@@ -228,7 +212,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const metaSignature = nacl.sign.detached(metaSerialized, secretKeyUint8);
     metadataTx.addSignature(payer.publicKey, Buffer.from(metaSignature));
     const metadataSig = await connection.sendRawTransaction(metadataTx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
+    await connection.confirmTransaction({ signature: metadataSig, blockhash: metadataTx.recentBlockhash, lastValidBlockHeight: (await connection.getLatestBlockhash("confirmed")).lastValidBlockHeight }, "confirmed");
     console.log("Metaplex metadata added:", metadataSig);
 
     return mint.toBase58();
