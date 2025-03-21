@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const formData = require("express-form-data"); // Add this
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, TransactionInstruction } = require("@solana/web3.js");
 const { createMint, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const fs = require("fs");
@@ -8,6 +9,7 @@ const path = require("path");
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(formData.parse()); // Add this to parse FormData
 app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
