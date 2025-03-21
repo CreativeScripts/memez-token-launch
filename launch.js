@@ -3,6 +3,7 @@ const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
 const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const { createMetadataAccountV3, TOKEN_METADATA_PROGRAM_ID } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
 
@@ -35,7 +36,7 @@ app.post("/upload-metadata", (req, res) => {
     external_url: website || "",
     attributes: [
       { trait_type: "Telegram", value: telegram || "N/A" },
-      { trait_type: "Twitter", value: twitter || "N/A" },
+      { trait_type: "Twitter", value: twitter || "N/A" }
     ],
   };
   const filename = `${Date.now()}-${safeName}.json`;
@@ -75,6 +76,38 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Mint created:", mint.toBase58());
 
+    // Add Token-2022 metadata using Metaplex
+    const metadataPDA = PublicKey.findProgramAddressSync(
+      [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+      TOKEN_METADATA_PROGRAM_ID
+    )[0];
+    const metadataTx = new Transaction().add(
+      createMetadataAccountV3({
+        metadata: metadataPDA,
+        mint,
+        mintAuthority: payer.publicKey,
+        payer: payer.publicKey,
+        updateAuthority: payer.publicKey,
+        data: {
+          name,
+          symbol,
+          uri,
+          sellerFeeBasisPoints: 0,
+          creators: null,
+          collection: null,
+          uses: null,
+        },
+        isMutable: true,
+        programId: TOKEN_METADATA_PROGRAM_ID,
+      })
+    );
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    metadataTx.recentBlockhash = blockhash;
+    metadataTx.feePayer = payer.publicKey;
+    const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Metadata added:", metadataSig);
+
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const ata = await PublicKey.findProgramAddressSync(
@@ -91,21 +124,19 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
         ASSOCIATED_TOKEN_PROGRAM
       )
     );
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    transaction.recentBlockhash = blockhash;
+    transaction.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     transaction.feePayer = payer.publicKey;
     const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created:", signature);
 
-    // Use mintTo helper instead of manual instruction
     const mintTxSignature = await mintTo(
       connection,
       payer,
       mint,
       ata,
-      payer.publicKey, // Mint authority
-      BigInt(supply) * BigInt(10**9), // Amount (with decimals)
+      payer.publicKey,
+      BigInt(supply) * BigInt(10**9),
       [],
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
