@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
 const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
@@ -98,7 +98,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       throw new Error("Invalid base58 public key: " + err.message);
     }
 
-    // Create and initialize mint using createMint
+    // Create and initialize mint in one transaction
     const mintTx = new Transaction().add(
       SystemProgram.createAccount({
         fromPubkey: payer.publicKey,
@@ -107,13 +107,13 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
         lamports: await connection.getMinimumBalanceForRentExemption(82),
         programId: TOKEN_2022_PROGRAM_ID,
       }),
-      createInitializeMintInstruction({
-        mint: mintKeypair.publicKey,
-        decimals: 9,
-        mintAuthority: payer.publicKey,
-        freezeAuthority: null,
-        programId: TOKEN_2022_PROGRAM_ID,
-      })
+      createInitializeMintInstruction(
+        mintKeypair.publicKey,
+        9,
+        payer.publicKey,
+        null,
+        TOKEN_2022_PROGRAM_ID
+      )
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     mintTx.recentBlockhash = blockhash;
