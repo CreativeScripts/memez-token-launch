@@ -1,15 +1,15 @@
 const express = require("express");
 const cors = require("cors");
-const formData = require("express-form-data"); // Add this
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, TransactionInstruction } = require("@solana/web3.js");
-const { createMint, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const formData = require("express-form-data");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
 const fs = require("fs");
 const path = require("path");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
-app.use(formData.parse()); // Add this to parse FormData
+app.use(formData.parse());
 app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
@@ -62,25 +62,16 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const { uri } = await metadataResponse.json();
     console.log("Metadata URI:", uri);
 
+    const mintKeypair = Keypair.generate();
     const mint = await createMint(
       connection,
       payer,
       payer.publicKey,
       null,
       9,
-      undefined,
-      {
-        extensions: {
-          metadata: {
-            name,
-            symbol,
-            uri,
-            additionalMetadata: [],
-          },
-        },
-      },
-      TOKEN_2022_PROGRAM_ID,
-      { commitment: "confirmed" }
+      mintKeypair,
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID
     );
     console.log("Mint created:", mint.toBase58());
 
@@ -107,25 +98,18 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Token account created:", signature);
 
-    const mintAmount = BigInt(supply) * BigInt(10**9);
-    const mintToData = Buffer.concat([
-      Buffer.from([9]),
-      Buffer.from(new Uint8Array(mintAmount.toString(16).padStart(16, '0').match(/.{2}/g).map(byte => parseInt(byte, 16))))
-    ]);
-    const mintToIx = new TransactionInstruction({
-      keys: [
-        { pubkey: mint, isSigner: false, isWritable: true },
-        { pubkey: ata, isSigner: false, isWritable: true },
-        { pubkey: payer.publicKey, isSigner: true, isWritable: false },
-      ],
-      programId: TOKEN_2022_PROGRAM_ID,
-      data: mintToData
-    });
-    const mintToTx = new Transaction().add(mintToIx);
-    mintToTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    mintToTx.feePayer = payer.publicKey;
-    const mintTxSignature = await connection.sendTransaction(mintToTx, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature: mintTxSignature, blockhash: (await connection.getLatestBlockhash("confirmed")).blockhash, lastValidBlockHeight }, "confirmed");
+    // Use mintTo helper instead of manual instruction
+    const mintTxSignature = await mintTo(
+      connection,
+      payer,
+      mint,
+      ata,
+      payer.publicKey, // Mint authority
+      BigInt(supply) * BigInt(10**9), // Amount (with decimals)
+      [],
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID
+    );
     console.log("Supply minted to:", ata.toBase58(), "Tx:", mintTxSignature);
 
     return mint.toBase58();
