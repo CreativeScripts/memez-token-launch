@@ -3,7 +3,7 @@ const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
 const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
-const { createMetadataAccountV3, TOKEN_METADATA_PROGRAM_ID } = require("@metaplex-foundation/mpl-token-metadata");
+const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
 
@@ -17,6 +17,7 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"); // Add this
 const BASE_URL = "https://memez-token-launch.onrender.com";
 
 const metadataDir = path.join(__dirname, "metadata");
@@ -76,7 +77,6 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Mint created:", mint.toBase58());
 
-    // Add Token-2022 metadata using Metaplex
     const metadataPDA = PublicKey.findProgramAddressSync(
       [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
       TOKEN_METADATA_PROGRAM_ID
@@ -98,7 +98,6 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
           uses: null,
         },
         isMutable: true,
-        programId: TOKEN_METADATA_PROGRAM_ID,
       })
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
