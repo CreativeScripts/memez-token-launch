@@ -11,7 +11,7 @@ const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzj
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+app.use(cors({ origin: "https://memez.wtf" }));
 app.use(formData.parse());
 app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
@@ -78,6 +78,11 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Mint created:", mint.toBase58());
 
+    console.log("Setting metadata with:", {
+      mint: mint.toBase58(),
+      payerPublicKey: payer.publicKey.toBase58(),
+      mintKeypairPublicKey: mintKeypair.publicKey.toBase58()
+    });
     const metadataPDA = PublicKey.findProgramAddressSync(
       [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
       TOKEN_METADATA_PROGRAM_ID
@@ -86,9 +91,9 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       createMetadataAccountV3({
         metadata: metadataPDA,
         mint: mint,
-        mintAuthority: payer, // Use full Keypair as Signer
-        payer: payer,         // Use full Keypair as Signer
-        updateAuthority: payer.publicKey, // PublicKey is fine here
+        mintAuthority: payer.publicKey, // Use PublicKey instead of Keypair
+        payer: payer,                   // Keep Keypair as Signer
+        updateAuthority: payer.publicKey,
         data: {
           name,
           symbol,
@@ -103,7 +108,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     metadataTx.recentBlockhash = blockhash;
-    metadataTx.feePayer = payer.publicKey;
+    metadataTx.fa
+eePayer = payer.publicKey;
     const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added:", metadataSig);
@@ -116,7 +122,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     )[0];
     const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
-        payer.publicKey,
+        payerPUBLICKey,
         ata,
         payer.publicKey,
         mint,
