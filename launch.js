@@ -91,8 +91,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       createMetadataAccountV3({
         metadata: metadataPDA,
         mint: mint,
-        mintAuthority: payer.publicKey, // Use PublicKey
-        payer: payer.publicKey,          // Use PublicKey, we'll sign with payer below
+        mintAuthority: payer, // Pass full Keypair as Signer
+        payer: payer,         // Pass full Keypair as Signer
         updateAuthority: payer.publicKey,
         data: {
           name,
@@ -109,7 +109,6 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     metadataTx.recentBlockhash = blockhash;
     metadataTx.feePayer = payer.publicKey;
-    metadataTx.partialSign(payer); // Explicitly sign with Keypair
     const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added:", metadataSig);
