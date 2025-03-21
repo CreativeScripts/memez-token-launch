@@ -14,14 +14,31 @@ app.use(formData.parse());
 app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
-const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
-console.log("Secret key length:", secretKey.length); // Should be 64
+
+// Load and validate wallet
+const secretKeyRaw = fs.readFileSync("wallet.json", "utf8");
+console.log("Raw secret key data:", secretKeyRaw.slice(0, 20) + "..."); // Truncate for brevity
+let secretKey;
+try {
+  secretKey = JSON.parse(secretKeyRaw);
+} catch (err) {
+  throw new Error("Failed to parse wallet.json: " + err.message);
+}
+console.log("Parsed secret key length:", secretKey.length);
+console.log("First few bytes:", secretKey.slice(0, 5)); // Debug first few bytes
 if (!Array.isArray(secretKey) || secretKey.length !== 64) {
   throw new Error("wallet.json must contain a 64-byte secret key array");
 }
-const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+
+let payer;
+try {
+  payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+} catch (err) {
+  throw new Error("Failed to create Keypair from secret key: " + err.message);
+}
 console.log("Payer public key:", payer.publicKey.toBase58());
-console.log("Payer has signTransaction:", typeof payer.signTransaction === "function"); // Verify payer is a Keypair
+console.log("Payer secret key (first 5 bytes):", payer.secretKey.slice(0, 5)); // Should match secretKey
+console.log("Payer has signTransaction:", typeof payer.signTransaction === "function"); // Must be true
 
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const BASE_URL = "https://memez-token-launch.onrender.com";
