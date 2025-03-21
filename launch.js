@@ -80,8 +80,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
 
     console.log("Setting metadata with:", {
       mint: mint.toBase58(),
-      payerPublicKey: payer.publicKey.toBase58(),
-      mintKeypairPublicKey: mintKeypair.publicKey.toBase58()
+      payer: payer.publicKey.toBase58(),
+      mintKeypair: mintKeypair.publicKey.toBase58()
     });
     const metadataPDA = PublicKey.findProgramAddressSync(
       [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
@@ -91,8 +91,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       createMetadataAccountV3({
         metadata: metadataPDA,
         mint: mint,
-        mintAuthority: payer.publicKey, // Use PublicKey instead of Keypair
-        payer: payer,                   // Keep Keypair as Signer
+        mintAuthority: payer.publicKey, // Use PublicKey
+        payer: payer.publicKey,          // Use PublicKey, we'll sign with payer below
         updateAuthority: payer.publicKey,
         data: {
           name,
@@ -108,8 +108,8 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     metadataTx.recentBlockhash = blockhash;
-    metadataTx.fa
-eePayer = payer.publicKey;
+    metadataTx.feePayer = payer.publicKey;
+    metadataTx.partialSign(payer); // Explicitly sign with Keypair
     const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added:", metadataSig);
@@ -122,7 +122,7 @@ eePayer = payer.publicKey;
     )[0];
     const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
-        payerPUBLICKey,
+        payer.publicKey,
         ata,
         payer.publicKey,
         mint,
@@ -133,39 +133,4 @@ eePayer = payer.publicKey;
     transaction.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     transaction.feePayer = payer.publicKey;
     const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-    console.log("Token account created:", signature);
-
-    const mintTxSignature = await mintTo(
-      connection,
-      payer,
-      mint,
-      ata,
-      payer.publicKey,
-      BigInt(supply) * BigInt(10**9),
-      [],
-      { commitment: "confirmed" },
-      TOKEN_2022_PROGRAM_ID
-    );
-    console.log("Supply minted to:", ata.toBase58(), "Tx:", mintTxSignature);
-
-    return mint.toBase58();
-  } catch (err) {
-    console.error("Mint failed:", err.stack);
-    throw err;
-  }
-}
-
-app.post("/launch", async (req, res) => {
-  const { name, symbol, supply, description, image, telegram, twitter, website, wallet } = req.body;
-  console.log("Received launch request:", { name, symbol, supply, wallet });
-  try {
-    const mintAddress = await launchToken(name, symbol, supply, description, image, telegram, twitter, website);
-    res.json({ success: true, mint: mintAddress });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-const port = process.env.PORT || 3001;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+    await connection.confirmTransaction({
