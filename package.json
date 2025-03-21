@@ -6,11 +6,12 @@
     "start": "node launch.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "@solana/web3.js": "^1.78.0",
+    "@metaplex-foundation/mpl-token-metadata": "^3.2.1",
     "@solana/spl-token": "^0.4.8",
+    "@solana/web3.js": "^1.98.0",
     "cors": "^2.8.5",
+    "express": "^4.18.2",
     "express-form-data": "^2.0.23",
-    "@metaplex-foundation/mpl-token-metadata": "^3.2.1"
+    "tweetnacl": "^1.0.3"
   }
 }
