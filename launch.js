@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMetadataPointerInstruction, createInitializeMintInstruction, ExtensionType } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMetadataPointerInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
 const fs = require("fs");
 const path = require("path");
 
@@ -63,6 +63,9 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     console.log("Metadata URI:", uri);
 
     const mintKeypair = Keypair.generate();
+    console.log("Payer key:", payer.publicKey.toBase58());
+    console.log("Mint keypair:", mintKeypair.publicKey.toBase58());
+
     const metadataPDA = PublicKey.findProgramAddressSync(
       [Buffer.from("metadata"), TOKEN_2022_PROGRAM_ID.toBuffer(), mintKeypair.publicKey.toBuffer()],
       TOKEN_2022_PROGRAM_ID
@@ -93,6 +96,10 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     mintTx.recentBlockhash = blockhash;
     mintTx.feePayer = payer.publicKey;
+    console.log("Signing mint transaction with:", {
+      payer: payer.publicKey.toBase58(),
+      mintKeypair: mintKeypair.publicKey.toBase58()
+    });
     mintTx.partialSign(payer, mintKeypair);
     const mintSig = await connection.sendTransaction(mintTx, [payer, mintKeypair], { skipPreflight: false });
     await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
