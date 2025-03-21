@@ -224,4 +224,14 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
 
 app.post("/launch", async (req, res) => {
   const { name, symbol, supply, description, image, telegram, twitter, website, wallet } = req.body;
-  console.log("Received
+  console.log("Received launch request:", { name, symbol, supply, wallet });
+  try {
+    const mintAddress = await launchToken(name, symbol, supply, description, image, telegram, twitter, website);
+    res.json({ success: true, mint: mintAddress });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const port = process.env.PORT || 3001;
+app.listen(port, () => console.log(`Server running on port ${port}`));
