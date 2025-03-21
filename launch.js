@@ -1,11 +1,13 @@
 const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram, TransactionInstruction } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMetadataPointerInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } = require("@solana/web3.js");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
 const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
+const nacl = require("tweetnacl");
+const bs58 = require("bs58");
 
 const app = express();
 app.use(express.json());
@@ -17,7 +19,7 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
 // Load and validate wallet
 const secretKeyRaw = fs.readFileSync("wallet.json", "utf8");
-console.log("Raw secret key data:", secretKeyRaw.slice(0, 20) + "..."); // Truncate for brevity
+console.log("Raw secret key data:", secretKeyRaw.slice(0, 20) + "...");
 let secretKey;
 try {
   secretKey = JSON.parse(secretKeyRaw);
@@ -25,23 +27,19 @@ try {
   throw new Error("Failed to parse wallet.json: " + err.message);
 }
 console.log("Parsed secret key length:", secretKey.length);
-console.log("First few bytes:", secretKey.slice(0, 5)); // Debug first few bytes
+console.log("First few bytes:", secretKey.slice(0, 5));
 if (!Array.isArray(secretKey) || secretKey.length !== 64) {
   throw new Error("wallet.json must contain a 64-byte secret key array");
 }
 
-let payer;
-try {
-  payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-} catch (err) {
-  throw new Error("Failed to create Keypair from secret key: " + err.message);
-}
+const secretKeyUint8 = Uint8Array.from(secretKey);
+const payer = Keypair.fromSecretKey(secretKeyUint8);
 console.log("Payer public key:", payer.publicKey.toBase58());
-console.log("Payer secret key (first 5 bytes):", payer.secretKey.slice(0, 5)); // Should match secretKey
-console.log("Payer has signTransaction:", typeof payer.signTransaction === "function"); // Must be true
+console.log("Payer private key (first 5 bytes):", secretKeyUint8.slice(0, 5));
+console.log("Payer publicKey type:", payer.publicKey.constructor.name);
 
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-const BASE_URL = "https://memez-token-launch.onrender.com";
+const BASE_URL = "http://localhost:3001"; // Local testing
 
 const metadataDir = path.join(__dirname, "metadata");
 if (!fs.existsSync(metadataDir)) fs.mkdirSync(metadataDir);
@@ -90,27 +88,47 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const mintKeypair = Keypair.generate();
     console.log("Payer key:", payer.publicKey.toBase58());
     console.log("Mint keypair:", mintKeypair.publicKey.toBase58());
+    console.log("Mint publicKey type:", mintKeypair.publicKey.constructor.name);
 
-    const metadataPDA = PublicKey.findProgramAddressSync(
-      [Buffer.from("metadata"), TOKEN_2022_PROGRAM_ID.toBuffer(), mintKeypair.publicKey.toBuffer()],
-      TOKEN_2022_PROGRAM_ID
-    )[0];
-    console.log("Metadata PDA:", metadataPDA.toBase58());
+    // Validate public keys
+    try {
+      bs58.decode(payer.publicKey.toBase58());
+      bs58.decode(mintKeypair.publicKey.toBase58());
+    } catch (err) {
+      throw new Error("Invalid base58 public key: " + err.message);
+    }
 
-    const mintTx = new Transaction().add(
+    // Prepare all transactions
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+    // 1. Create mint account
+    const mintTx = new Transaction();
+    mintTx.recentBlockhash = blockhash;
+    mintTx.feePayer = payer.publicKey;
+    mintTx.add(
       SystemProgram.createAccount({
         fromPubkey: payer.publicKey,
         newAccountPubkey: mintKeypair.publicKey,
-        space: 146,
-        lamports: await connection.getMinimumBalanceForRentExemption(146),
+        space: 82,
+        lamports: await connection.getMinimumBalanceForRentExemption(82),
         programId: TOKEN_2022_PROGRAM_ID,
-      }),
-      createInitializeMetadataPointerInstruction(
-        mintKeypair.publicKey,
-        payer.publicKey,
-        metadataPDA,
-        TOKEN_2022_PROGRAM_ID
-      ),
+      })
+    );
+    const mintSerialized = mintTx.serializeMessage();
+    const payerMintSignature = nacl.sign.detached(mintSerialized, secretKeyUint8);
+    const mintKeySignature = nacl.sign.detached(mintSerialized, mintKeypair.secretKey);
+    mintTx.addSignature(payer.publicKey, Buffer.from(payerMintSignature));
+    mintTx.addSignature(mintKeypair.publicKey, Buffer.from(mintKeySignature));
+    const mintSig = await connection.sendRawTransaction(mintTx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
+    const mint = mintKeypair.publicKey;
+    console.log("Mint account created:", mint.toBase58());
+
+    // 2. Initialize mint
+    const initMintTx = new Transaction();
+    initMintTx.recentBlockhash = blockhash;
+    initMintTx.feePayer = payer.publicKey;
+    initMintTx.add(
       createInitializeMintInstruction({
         mint: mintKeypair.publicKey,
         decimals: 9,
@@ -119,49 +137,22 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
         programId: TOKEN_2022_PROGRAM_ID,
       })
     );
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-    mintTx.recentBlockhash = blockhash;
-    mintTx.feePayer = payer.publicKey;
-    console.log("Before signing:", {
-      payerPubkey: payer.publicKey.toBase58(),
-      mintPubkey: mintKeypair.publicKey.toBase58()
-    });
-    const signedMintTx = await payer.signTransaction(mintTx);
-    signedMintTx.partialSign(mintKeypair);
-    const mintSig = await connection.sendRawTransaction(signedMintTx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
-    const mint = mintKeypair.publicKey;
-    console.log("Mint created:", mint.toBase58());
+    const initSerialized = initMintTx.serializeMessage();
+    const initSignature = nacl.sign.detached(initSerialized, secretKeyUint8);
+    initMintTx.addSignature(payer.publicKey, Buffer.from(initSignature));
+    const initMintSig = await connection.sendRawTransaction(initMintTx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: initMintSig, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Mint initialized:", mint.toBase58());
 
-    const metadataTx = new Transaction().add(
-      new TransactionInstruction({
-        keys: [
-          { pubkey: metadataPDA, isSigner: false, isWritable: true },
-          { pubkey: mint, isSigner: false, isWritable: true },
-          { pubkey: payer.publicKey, isSigner: true, isWritable: false },
-        ],
-        programId: TOKEN_2022_PROGRAM_ID,
-        data: Buffer.concat([
-          Buffer.from([14]), // Metadata instruction for Token-2022
-          Buffer.from(name, "utf8"), Buffer.from([0]), // Name + null terminator
-          Buffer.from(symbol, "utf8"), Buffer.from([0]), // Symbol + null terminator
-          Buffer.from(uri, "utf8"), Buffer.from([0]) // URI + null terminator
-        ]),
-      })
-    );
-    metadataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    metadataTx.feePayer = payer.publicKey;
-    const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
-    console.log("Metadata added:", metadataSig);
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
+    // 3. Create associated token account
     const ata = await PublicKey.findProgramAddressSync(
       [payer.publicKey.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), mint.toBuffer()],
       ASSOCIATED_TOKEN_PROGRAM
     )[0];
-    const transaction = new Transaction().add(
+    const ataTx = new Transaction();
+    ataTx.recentBlockhash = blockhash;
+    ataTx.feePayer = payer.publicKey;
+    ataTx.add(
       createAssociatedTokenAccountInstruction(
         payer.publicKey,
         ata,
@@ -171,26 +162,29 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
         ASSOCIATED_TOKEN_PROGRAM
       )
     );
-    transaction.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    transaction.feePayer = payer.publicKey;
-    const signature = await connection.sendTransaction(transaction, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-    console.log("Token account created:", signature);
+    const ataSerialized = ataTx.serializeMessage();
+    const ataSignature = nacl.sign.detached(ataSerialized, secretKeyUint8);
+    ataTx.addSignature(payer.publicKey, Buffer.from(ataSignature));
+    const ataSig = await connection.sendRawTransaction(ataTx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: ataSig, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Token account created:", ataSig);
 
-    const mintTxSignature = await mintTo(
+    // 4. Mint tokens
+    const mintAmount = BigInt(supply) * BigInt(10**9);
+    const mintToTx = await mintTo(
       connection,
       payer,
       mint,
       ata,
       payer.publicKey,
-      BigInt(supply) * BigInt(10**9),
+      mintAmount,
       [],
       { commitment: "confirmed" },
       TOKEN_2022_PROGRAM_ID
     );
-    console.log("Supply minted to:", ata.toBase58(), "Tx:", mintTxSignature);
+    console.log("Supply minted to:", ata.toBase58(), "Tx:", mintToTx);
 
-    // Add Metaplex metadata
+    // 5. Add metadata
     const METAPLEX_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
     const [metaplexMetadataPDA] = PublicKey.findProgramAddressSync(
       [
@@ -200,8 +194,18 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       ],
       METAPLEX_PROGRAM_ID
     );
+    console.log("Metadata PDA:", metaplexMetadataPDA.toBase58());
 
-    const metaplexMetadataTx = new Transaction().add(
+    const uriCheck = await fetch(uri);
+    if (!uriCheck.ok) {
+      throw new Error(`Metadata URI ${uri} is not accessible: ${uriCheck.statusText}`);
+    }
+    console.log("Metadata URI is accessible");
+
+    const metadataTx = new Transaction();
+    metadataTx.recentBlockhash = blockhash;
+    metadataTx.feePayer = payer.publicKey;
+    metadataTx.add(
       createMetadataAccountV3({
         metadata: metaplexMetadataPDA,
         mint: mint,
@@ -212,25 +216,20 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
           name,
           symbol,
           uri,
-          sellerFeeBasisPoints: 0, // No royalties for now
-          creators: null, // Add creators if you want
+          sellerFeeBasisPoints: 0,
+          creators: [],
           collection: null,
           uses: null,
         },
         isMutable: true,
-        programId: METAPLEX_PROGRAM_ID,
       })
     );
-
-    metaplexMetadataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
-    metaplexMetadataTx.feePayer = payer.publicKey;
-    const metaplexMetadataSig = await connection.sendTransaction(metaplexMetadataTx, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({
-      signature: metaplexMetadataSig,
-      blockhash: metaplexMetadataTx.recentBlockhash,
-      lastValidBlockHeight: (await connection.getLatestBlockhash("confirmed")).lastValidBlockHeight,
-    }, "confirmed");
-    console.log("Metaplex metadata added:", metaplexMetadataSig);
+    const metaSerialized = metadataTx.serializeMessage();
+    const metaSignature = nacl.sign.detached(metaSerialized, secretKeyUint8);
+    metadataTx.addSignature(payer.publicKey, Buffer.from(metaSignature));
+    const metadataSig = await connection.sendRawTransaction(metadataTx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
+    console.log("Metaplex metadata added:", metadataSig);
 
     return mint.toBase58();
   } catch (err) {
