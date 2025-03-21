@@ -1,8 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
-const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram } = require("@solana/web3.js");
+const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction, SystemProgram, TransactionInstruction } = require("@solana/web3.js");
 const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createInitializeMetadataPointerInstruction, createInitializeMintInstruction } = require("@solana/spl-token");
+const { createMetadataAccountV3 } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
 
@@ -134,7 +135,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     metadataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
     metadataTx.feePayer = payer.publicKey;
     const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
-    await connection.confirmTransaction({ signature: metadataSig, blockhash: lastValidBlockHeight }, "confirmed");
+    await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added:", metadataSig);
 
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -172,6 +173,48 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Supply minted to:", ata.toBase58(), "Tx:", mintTxSignature);
 
+    // Add Metaplex metadata
+    const METAPLEX_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+    const [metaplexMetadataPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("metadata"),
+        METAPLEX_PROGRAM_ID.toBuffer(),
+        mint.toBuffer(),
+      ],
+      METAPLEX_PROGRAM_ID
+    );
+
+    const metaplexMetadataTx = new Transaction().add(
+      createMetadataAccountV3({
+        metadata: metaplexMetadataPDA,
+        mint: mint,
+        mintAuthority: payer.publicKey,
+        payer: payer.publicKey,
+        updateAuthority: payer.publicKey,
+        data: {
+          name,
+          symbol,
+          uri,
+          sellerFeeBasisPoints: 0, // No royalties for now
+          creators: null, // Add creators if you want
+          collection: null,
+          uses: null,
+        },
+        isMutable: true,
+        programId: METAPLEX_PROGRAM_ID,
+      })
+    );
+
+    metaplexMetadataTx.recentBlockhash = (await connection.getLatestBlockhash("confirmed")).blockhash;
+    metaplexMetadataTx.feePayer = payer.publicKey;
+    const metaplexMetadataSig = await connection.sendTransaction(metaplexMetadataTx, [payer], { skipPreflight: false });
+    await connection.confirmTransaction({
+      signature: metaplexMetadataSig,
+      blockhash: metaplexMetadataTx.recentBlockhash,
+      lastValidBlockHeight: (await connection.getLatestBlockhash("confirmed")).lastValidBlockHeight,
+    }, "confirmed");
+    console.log("Metaplex metadata added:", metaplexMetadataSig);
+
     return mint.toBase58();
   } catch (err) {
     console.error("Mint failed:", err.stack);
@@ -181,14 +224,4 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
 
 app.post("/launch", async (req, res) => {
   const { name, symbol, supply, description, image, telegram, twitter, website, wallet } = req.body;
-  console.log("Received launch request:", { name, symbol, supply, wallet });
-  try {
-    const mintAddress = await launchToken(name, symbol, supply, description, image, telegram, twitter, website);
-    res.json({ success: true, mint: mintAddress });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-const port = process.env.PORT || 3001;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+  console.log("Received
