@@ -2,7 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const formData = require("express-form-data");
 const { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, Transaction } = require("@solana/web3.js");
-const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction, createMetadataInstruction } = require("@solana/spl-token");
+const { createMint, mintTo, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, createAssociatedTokenAccountInstruction } = require("@solana/spl-token");
+const { createMetadataAccountV3, TOKEN_METADATA_PROGRAM_ID } = require("@metaplex-foundation/mpl-token-metadata");
 const fs = require("fs");
 const path = require("path");
 
@@ -75,29 +76,39 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     );
     console.log("Mint created:", mint.toBase58());
 
-    // Add Token-2022 metadata
+    console.log("Setting metadata with:", {
+      mint: mint.toBase58(),
+      payer: payer.publicKey.toBase58(),
+      mintKeypair: mintKeypair.publicKey.toBase58()
+    });
+    const metadataPDA = PublicKey.findProgramAddressSync(
+      [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+      TOKEN_METADATA_PROGRAM_ID
+    )[0];
     const metadataTx = new Transaction().add(
-      createMetadataInstruction(
-        {
-          metadata: PublicKey.findProgramAddressSync(
-            [Buffer.from("metadata"), TOKEN_2022_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-            TOKEN_2022_PROGRAM_ID
-          )[0],
-          mint: mint,
-          mintAuthority: payer.publicKey,
-          payer: payer.publicKey,
-          updateAuthority: payer.publicKey,
+      createMetadataAccountV3({
+        metadata: metadataPDA,
+        mint: mint,
+        mintAuthority: payer.publicKey,
+        payer: payer.publicKey,
+        updateAuthority: payer.publicKey,
+        data: {
           name,
           symbol,
           uri,
+          sellerFeeBasisPoints: 0,
+          creators: null,
+          collection: null,
+          uses: null,
         },
-        TOKEN_2022_PROGRAM_ID
-      )
+        isMutable: true,
+      })
     );
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     metadataTx.recentBlockhash = blockhash;
     metadataTx.feePayer = payer.publicKey;
-    const metadataSig = await connection.sendTransaction(metadataTx, [payer, mintKeypair], { skipPreflight: false });
+    metadataTx.partialSign(payer); // Explicitly sign with Keypair
+    const metadataSig = await connection.sendTransaction(metadataTx, [payer], { skipPreflight: false });
     await connection.confirmTransaction({ signature: metadataSig, blockhash, lastValidBlockHeight }, "confirmed");
     console.log("Metadata added:", metadataSig);
 
