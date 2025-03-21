@@ -14,8 +14,14 @@ app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
-console.log("Secret key length:", secretKey.length); // Debug secret key length
+console.log("Secret key length:", secretKey.length); // Should be 64
+if (!Array.isArray(secretKey) || secretKey.length !== 64) {
+  throw new Error("wallet.json must contain a 64-byte secret key array");
+}
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+console.log("Payer public key:", payer.publicKey.toBase58());
+console.log("Payer has signTransaction:", typeof payer.signTransaction === "function"); // Verify payer is a Keypair
+
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const BASE_URL = "https://memez-token-launch.onrender.com";
 
@@ -77,7 +83,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       SystemProgram.createAccount({
         fromPubkey: payer.publicKey,
         newAccountPubkey: mintKeypair.publicKey,
-        space: 146, // Space for Token-2022 with MetadataPointer
+        space: 146,
         lamports: await connection.getMinimumBalanceForRentExemption(146),
         programId: TOKEN_2022_PROGRAM_ID,
       }),
@@ -98,9 +104,9 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     mintTx.recentBlockhash = blockhash;
     mintTx.feePayer = payer.publicKey;
-    console.log("Signing mint transaction with:", {
-      payer: payer.publicKey.toBase58(),
-      mintKeypair: mintKeypair.publicKey.toBase58()
+    console.log("Before signing:", {
+      payerPubkey: payer.publicKey.toBase58(),
+      mintPubkey: mintKeypair.publicKey.toBase58()
     });
     const signedMintTx = await payer.signTransaction(mintTx);
     signedMintTx.partialSign(mintKeypair);
@@ -109,7 +115,6 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
     const mint = mintKeypair.publicKey;
     console.log("Mint created:", mint.toBase58());
 
-    // Custom metadata instruction for Token-2022
     const metadataTx = new Transaction().add(
       new TransactionInstruction({
         keys: [
