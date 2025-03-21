@@ -14,6 +14,7 @@ app.use("/metadata", express.static(path.join(__dirname, "metadata")));
 
 const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
+console.log("Secret key length:", secretKey.length); // Debug secret key length
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const BASE_URL = "https://memez-token-launch.onrender.com";
@@ -70,6 +71,7 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       [Buffer.from("metadata"), TOKEN_2022_PROGRAM_ID.toBuffer(), mintKeypair.publicKey.toBuffer()],
       TOKEN_2022_PROGRAM_ID
     )[0];
+    console.log("Metadata PDA:", metadataPDA.toBase58());
 
     const mintTx = new Transaction().add(
       SystemProgram.createAccount({
@@ -100,8 +102,9 @@ async function launchToken(name, symbol, supply, description, image, telegram, t
       payer: payer.publicKey.toBase58(),
       mintKeypair: mintKeypair.publicKey.toBase58()
     });
-    mintTx.partialSign(payer, mintKeypair);
-    const mintSig = await connection.sendTransaction(mintTx, [payer, mintKeypair], { skipPreflight: false });
+    const signedMintTx = await payer.signTransaction(mintTx);
+    signedMintTx.partialSign(mintKeypair);
+    const mintSig = await connection.sendRawTransaction(signedMintTx.serialize(), { skipPreflight: false });
     await connection.confirmTransaction({ signature: mintSig, blockhash, lastValidBlockHeight }, "confirmed");
     const mint = mintKeypair.publicKey;
     console.log("Mint created:", mint.toBase58());
