@@ -14,13 +14,17 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const secretKey = JSON.parse(fs.readFileSync("wallet.json", "utf8"));
 const payer = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
-const BASE_URL = "https://memez-token-launch.onrender.com"; // Hardcode for now
+const BASE_URL = "https://memez-token-launch.onrender.com";
 
 const metadataDir = path.join(__dirname, "metadata");
 if (!fs.existsSync(metadataDir)) fs.mkdirSync(metadataDir);
 
 app.post("/upload-metadata", (req, res) => {
   const { name, symbol, description, image, telegram, twitter, website } = req.body;
+  if (!name || !symbol) {
+    return res.status(400).json({ success: false, error: "Name and symbol are required" });
+  }
+  const safeName = (name || "Unknown").replace(/\s+/g, "-");
   const metadata = {
     name,
     symbol,
@@ -32,7 +36,7 @@ app.post("/upload-metadata", (req, res) => {
       { trait_type: "Twitter", value: twitter || "N/A" },
     ],
   };
-  const filename = `${Date.now()}-${name.replace(/\s+/g, "-")}.json`;
+  const filename = `${Date.now()}-${safeName}.json`;
   const filepath = path.join(metadataDir, filename);
   fs.writeFileSync(filepath, JSON.stringify(metadata, null, 2));
   const uri = `${BASE_URL}/metadata/${filename}`;
@@ -41,6 +45,9 @@ app.post("/upload-metadata", (req, res) => {
 
 async function launchToken(name, symbol, supply, description, image, telegram, twitter, website) {
   console.log("Starting token mint:", { name, symbol, supply });
+  if (!name || !symbol || !supply) {
+    throw new Error("Name, symbol, and supply are required");
+  }
   try {
     const balance = await connection.getBalance(payer.publicKey);
     console.log("Payer balance:", balance / LAMPORTS_PER_SOL, "SOL");
